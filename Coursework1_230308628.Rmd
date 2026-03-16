@@ -1,0 +1,218 @@
+---
+title: "Time Series Forecasting of UK Gas Consumption using Prophet"
+subtitle: "Coursework 1"
+author: "Joshua Amoako"
+date: "10/3/2026"
+output: 
+  html_document:
+    toc: true
+    toc_float: true
+    theme: spacelab
+    highlight: tango
+---
+
+```{r, echo=FALSE}
+# Display the QMUL logo
+htmltools::img(src = knitr::image_uri("images/QMlogo.png"),
+               alt = 'logo',
+               style = 'position:absolute; top:0; right:0; padding:10px; width:20%;')
+```
+
+# Introduction
+
+In this project, we perform a comprehensive analysis of **UK gas consumption** using time series forecasting techniques. In the modern energy landscape, understanding historical consumption patterns is vital for infrastructure planning, pricing strategies, and ensuring energy security.
+
+To achieve this, we utilize **Meta’s Prophet model**, a robust forecasting tool designed to handle the specific challenges of time series data, such as strong seasonal effects and long-term non-linear trends.
+
+---
+
+# Objectives
+
+The primary goals of this report are:
+
+**Data Exploration**: To visualize and understand the raw historical consumption data.
+
+**Trend Quantification**: To use Linear Regression to find the average growth rate of gas demand.
+
+**Advanced Forecasting**: To implement the Prophet model to predict future consumption patterns.
+
+**Component Decomposition**: To isolate the specific impact of seasonal changes (winter vs. summer) on the UK's energy needs.
+
+---
+
+# Dataset Description
+
+The dataset used is **`UKgas`**, which provides quarterly records of gas consumption in the UK, measured in **millions of therms**.
+
+This dataset is a classic example of **"seasonal" data**. Because it is recorded quarterly, we can clearly see the impact of the UK's climate on energy usage. Gas consumption typically **surges during the colder months** for heating and **drops during the summer**, providing a perfect test case for **time series decomposition**.
+
+---
+
+# Load Required Packages
+
+```{r}
+library(prophet)
+library(zoo)
+```
+
+---
+
+# Data Preparation
+
+Prophet requires a dataframe with two columns:
+
+- `ds` → date  
+- `y` → observed value  
+
+We convert the `UKgas` time series into this format:
+
+```{r}
+gas_data <- data.frame(
+  ds = as.Date(as.yearmon(time(UKgas))),
+  y = as.numeric(UKgas)
+)
+
+head(gas_data)
+```
+
+---
+
+# Summary Statistics
+
+
+Before modeling, we look at the basic distribution of the data to identify the range of consumption values.
+```{r}
+summary(gas_data$y)
+```
+
+
+The summary statistics show the "spread" of the data, highlighting the significant difference between the minimum consumption periods (summer) and the maximum peaks (winter).
+
+---
+
+# Exploratory Data Analysis
+
+Visualizing the raw data allows us to identify the two most important features of this time series: **Trend and Seasonality**.
+
+```{r}
+plot(gas_data$ds, gas_data$y, type="l",
+     main="UK Gas Consumption Over Time",
+     xlab="Year",
+     ylab="Gas Consumption (Millions of Therms)")
+```
+
+Observations:
+
+- **Upward trend**:There is a visible upward slope, indicating that gas demand increased consistently over several decades.  
+- **Repeating seasonal fluctuations**: The sharp, repeating "peaks" and "troughs" indicate that consumption is highly dependent on the time of year.
+
+
+---
+
+# Linear Trend Analysis
+
+To quantify the long-term growth, we fit a **Simple Linear Regression model**. This allows us to calculate exactly how much gas consumption increases on average every quarter, effectively "straightening out" the seasonal wiggles to see the underlying growth.
+
+The model is defined by the equation: 
+$$y = \beta_0 + \beta_1 x + \epsilon$$
+
+```{r}
+time_index <- 1:nrow(gas_data)
+trend_model <- lm(y ~ time_index, data = gas_data)
+summary(trend_model)
+```
+
+**Interpretation:**
+
+- $\beta_1$ gives the **average quarterly increase** in gas consumption.  
+- $\beta_0$ is the starting level at the first quarter.  
+- The model confirms a **significant long-term upward trend**.
+
+The **red line** represents the "average" path of gas demand. While it shows the general direction of the market, it cannot account for the seasonal spikes, which is why more advanced modeling (Prophet) is necessary.
+We can visualise the regression line on top of the data:
+
+```{r}
+plot(gas_data$ds, gas_data$y, type="l",
+     main="UK Gas Consumption with Linear Trend",
+     xlab="Year",
+     ylab="Gas Consumption")
+abline(trend_model, col="red", lwd=2)
+```
+---
+
+# Forecasting with Prophet
+
+Prophet models the time series as:
+
+$x(t) = m(t) + s(t) + y(t)$
+
+- $m(t)$ → trend  
+- $s(t)$ → seasonality  
+- $y(t)$ → error  
+
+We fit the Prophet model:
+
+```{r}
+prophet_model <- prophet(gas_data)
+```
+
+Next, we create **future dates for forecasting**:
+
+```{r}
+future_dates <- make_future_dataframe(prophet_model, periods=20, freq="quarter")
+forecast <- predict(prophet_model, future_dates)
+
+# Inspect forecast
+head(forecast)
+```
+
+**Observation:**  
+The forecast includes **predicted values (`yhat`)**, **lower and upper uncertainty bounds**, and **trend/seasonal components**.
+
+---
+
+# Forecast Visualisation
+
+We visualise the predicted values with uncertainty:
+
+```{r}
+plot(prophet_model, forecast)
+```
+
+**Explaining the Visualisation:**
+* **Black Dots:** These represent the **actual historical data points**, showing the real-world observations recorded in the past.
+* **Dark Blue Line:** This is our **predicted consumption** (`yhat`). Notice how the model successfully projects the seasonal **"zig-zag"** pattern into the future, rather than just a straight line.
+* **Light Blue Shaded Area:** This represents the **Uncertainty Interval**. Because we cannot predict the future perfectly, this **"ribbon"** shows the range where the actual values are likely to fall. As we look further ahead, the ribbon **widens**, indicating that our confidence in the specific forecast decreases over time.
+
+---
+
+# Trend and Seasonal Components
+
+One of **Prophet’s best features** is its ability to **"unstack"** the data so we can see what is actually driving the numbers. This turns a complex graph into **two simple, understandable stories**.
+
+```{r, message=FALSE, warning=FALSE}
+# Plotting the components while suppressing background warnings
+prophet_plot_components(prophet_model, forecast)
+
+```
+### Breaking Down the Components:
+
+* **Trend (Top Plot):** This shows the **"clean" growth** of gas demand. It strips away the winter spikes to show the **structural increase** in gas usage over time. This is useful for **long-term policy and infrastructure planning**, as it reveals the underlying trajectory of the market.
+
+* **Yearly Seasonality (Bottom Plot):** This is the **"seasonal heartbeat"** of the UK.
+    * It shows that consumption consistently **peaks in Q1** (January–March) and **Q4** (October–December).
+    * It also highlights the **"valley"** or trough in the summer months when heating demand disappears.
+ **Key Insight:** For an energy company, this graph serves as a **strategic roadmap**, indicating exactly when they need to have the most gas in storage to meet high-intensity heating demands.
+---
+
+
+# Discussion and Conclusion
+
+This analysis demonstrates that UK gas consumption is driven by two main forces: a **steady long-term increase** in demand and **extreme seasonal volatility**. 
+
+While our **Linear Regression** provided a useful "baseline" for the growth rate, it was insufficient for capturing the seasonal reality of the energy market. The **Prophet model**, however, successfully modeled the quarterly **"spikes,"** providing a forecast that accounts for both the upward trend and the predictable winter peaks.
+
+By utilizing the **uncertainty intervals** (the blue shaded regions) provided by Prophet, energy planners can better prepare for **"worst-case" scenarios** in high-demand quarters. This ensures that the UK's gas infrastructure is prepared not just for the "average" day, but for the **cold winter peaks** where demand is highest.
+
+### Final Summary
+In conclusion, this project shows how moving from simple linear models to **advanced decomposition models** like Prophet allows us to turn raw data into **meaningful, visual stories** that can guide real-world decision-making.

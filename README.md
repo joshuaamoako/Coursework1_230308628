@@ -1,1 +1,1 @@
-# Coursework1_230308628
+Time series decomposition and forecasting of UK gas consumption using Meta's Prophet model for QMUL Coursework 1.
